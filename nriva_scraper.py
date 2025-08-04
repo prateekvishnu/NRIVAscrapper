@@ -256,19 +256,213 @@ class NRIVAScraper:
         except Exception as e:
             self.logger.error(f"Error searching profiles: {e}")
             return []
+    
+    def get_profile_page(self, profile_id):
+        """Get the detailed profile page for a specific profile ID"""
+        try:
+            # Profile URL format from the HTML structure
+            profile_url = f"{self.base_url}/eedu-jodu/preview-profile/{profile_id}"
+            
+            self.logger.info(f"Fetching profile page: {profile_url}")
+            response = self.session.get(profile_url)
+            response.raise_for_status()
+            
+            return response.text
+                
+        except Exception as e:
+            self.logger.error(f"Error getting profile page for ID {profile_id}: {e}")
+            return None
+    
+    def extract_profile_details(self, profile_html, profile_id):
+        """Extract detailed information from profile HTML"""
+        try:
+            soup = BeautifulSoup(profile_html, 'html.parser')
+            
+            profile_data = {
+                'profile_id': profile_id,
+                'extracted_at': time.strftime('%Y-%m-%d %H:%M:%S')
+            }
+            
+            # Extract basic information from the profile page
+            # This will need to be customized based on the actual profile page structure
+            
+            # Look for common profile elements
+            name_elem = soup.find('h1') or soup.find('h2') or soup.find('h3')
+            if name_elem:
+                profile_data['name'] = name_elem.get_text(strip=True)
+            
+            # Extract all text content
+            profile_data['full_text'] = soup.get_text(separator='\n', strip=True)
+            
+            # Extract all images
+            images = []
+            img_tags = soup.find_all('img')
+            for img in img_tags:
+                src = img.get('src')
+                if src:
+                    if not src.startswith('http'):
+                        src = urljoin(self.base_url, src)
+                    images.append(src)
+            profile_data['images'] = images
+            
+            # Extract all links (potential horoscope PDFs)
+            links = []
+            link_tags = soup.find_all('a', href=True)
+            for link in link_tags:
+                href = link.get('href')
+                if href:
+                    if not href.startswith('http'):
+                        href = urljoin(self.base_url, href)
+                    links.append(href)
+            profile_data['links'] = links
+            
+            # Look for PDF links (potential horoscopes)
+            pdf_links = [link for link in links if link.lower().endswith('.pdf')]
+            profile_data['pdf_files'] = pdf_links
+            
+            return profile_data
+            
+        except Exception as e:
+            self.logger.error(f"Error extracting profile details for ID {profile_id}: {e}")
+            return None
+    
+    def save_profile_data(self, profile_data, profile_id):
+        """Save profile data to files"""
+        try:
+            # Create profile directory
+            profile_dir = self.output_dir / str(profile_id)
+            profile_dir.mkdir(exist_ok=True)
+            
+            # Save profile data as JSON
+            json_file = profile_dir / "profile_data.json"
+            with open(json_file, 'w', encoding='utf-8') as f:
+                json.dump(profile_data, f, indent=2, ensure_ascii=False)
+            
+            # Save full text
+            if 'full_text' in profile_data:
+                text_file = profile_dir / "profile_text.txt"
+                with open(text_file, 'w', encoding='utf-8') as f:
+                    f.write(profile_data['full_text'])
+            
+            # Download images
+            if 'images' in profile_data:
+                images_dir = profile_dir / "images"
+                images_dir.mkdir(exist_ok=True)
+                
+                for i, img_url in enumerate(profile_data['images']):
+                    try:
+                        img_response = self.session.get(img_url)
+                        img_response.raise_for_status()
+                        
+                        # Determine file extension
+                        ext = '.jpg'  # default
+                        if 'png' in img_url.lower():
+                            ext = '.png'
+                        elif 'gif' in img_url.lower():
+                            ext = '.gif'
+                        
+                        img_file = images_dir / f"image_{i}{ext}"
+                        with open(img_file, 'wb') as f:
+                            f.write(img_response.content)
+                        
+                        self.logger.info(f"Downloaded image: {img_file}")
+                        
+                    except Exception as e:
+                        self.logger.error(f"Error downloading image {img_url}: {e}")
+            
+            # Download PDF files (horoscopes)
+            if 'pdf_files' in profile_data:
+                pdfs_dir = profile_dir / "horoscopes"
+                pdfs_dir.mkdir(exist_ok=True)
+                
+                for i, pdf_url in enumerate(profile_data['pdf_files']):
+                    try:
+                        pdf_response = self.session.get(pdf_url)
+                        pdf_response.raise_for_status()
+                        
+                        pdf_file = pdfs_dir / f"horoscope_{i}.pdf"
+                        with open(pdf_file, 'wb') as f:
+                            f.write(pdf_response.content)
+                        
+                        self.logger.info(f"Downloaded PDF: {pdf_file}")
+                        
+                    except Exception as e:
+                        self.logger.error(f"Error downloading PDF {pdf_url}: {e}")
+            
+            self.logger.info(f"Profile {profile_id} data saved to {profile_dir}")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Error saving profile data for ID {profile_id}: {e}")
+            return False
+    
+    def scrape_all_profiles(self, username="prateekvishnu04@gmail.com", password="bHZV2btjn6FK@2"):
+        """Main method to scrape all profiles"""
+        try:
+            self.logger.info("Starting NRIVA profile scraping...")
+            
+            # Login first
+            if not self.login(username, password):
+                self.logger.error("Login failed, cannot proceed")
+                return False
+            
+            # Search for profiles
+            profiles = self.search_profiles()
+            if not profiles:
+                self.logger.error("No profiles found")
+                return False
+            
+            self.logger.info(f"Found {len(profiles)} profiles to process")
+            
+            # Process each profile
+            successful_profiles = 0
+            for i, profile in enumerate(profiles, 1):
+                try:
+                    profile_id = profile.get('id') or profile.get('profile_id')
+                    if not profile_id:
+                        self.logger.warning(f"Profile {i} has no ID, skipping")
+                        continue
+                    
+                    self.logger.info(f"Processing profile {i}/{len(profiles)} - ID: {profile_id}")
+                    
+                    # Get profile page
+                    profile_html = self.get_profile_page(profile_id)
+                    if not profile_html:
+                        self.logger.warning(f"Could not get profile page for ID {profile_id}")
+                        continue
+                    
+                    # Extract profile details
+                    profile_data = self.extract_profile_details(profile_html, profile_id)
+                    if not profile_data:
+                        self.logger.warning(f"Could not extract data for profile ID {profile_id}")
+                        continue
+                    
+                    # Save profile data
+                    if self.save_profile_data(profile_data, profile_id):
+                        successful_profiles += 1
+                    
+                    # Be respectful to the server
+                    time.sleep(2)
+                    
+                except Exception as e:
+                    self.logger.error(f"Error processing profile {i}: {e}")
+                    continue
+            
+            self.logger.info(f"Scraping completed! Successfully processed {successful_profiles}/{len(profiles)} profiles")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Error in main scraping method: {e}")
+            return False
 
 
 if __name__ == "__main__":
     scraper = NRIVAScraper()
     print("NRIVA Scraper created successfully!")
     
-    # Test login
-    success = scraper.login("prateekvishnu04@gmail.com", "bHZV2btjn6FK@2")
+    # Test the complete scraping process
+    success = scraper.scrape_all_profiles()
     if success:
-        print("Login test successful!")
-        
-        # Test search
-        profiles = scraper.search_profiles()
-        print(f"Found {len(profiles)} profiles")
+        print("Scraping completed successfully!")
     else:
-        print("Login test failed!") 
+        print("Scraping failed!") 
