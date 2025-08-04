@@ -212,6 +212,50 @@ class NRIVAScraper:
         except Exception as e:
             self.logger.error(f"Error during login: {e}")
             return False
+    
+    def search_profiles(self, gender="Female", max_age=31, citizenship="USA"):
+        """Search for profiles with specified criteria"""
+        try:
+            self.logger.info(f"Searching for profiles: Gender={gender}, Max Age={max_age}, Citizenship={citizenship}")
+            
+            # First get the search page to extract CSRF token
+            response = self.session.get(self.search_url)
+            response.raise_for_status()
+            soup = BeautifulSoup(response.content, 'html.parser')
+            
+            # Get CSRF token
+            csrf_token = self.get_csrf_token(soup)
+            if not csrf_token:
+                self.logger.error("Could not get CSRF token from search page")
+                return []
+            
+            # Prepare search data
+            search_data = {
+                '_token': csrf_token,
+                'gender': gender,
+                'max_age': max_age,
+                'citizenship': citizenship
+            }
+            
+            # Submit search request
+            response = self.session.post(self.search_endpoint, data=search_data)
+            response.raise_for_status()
+            
+            # Parse response
+            data = response.json()
+            
+            if 'data' in data:
+                profiles = data['data']
+                total_records = data.get('recordsTotal', len(profiles))
+                self.logger.info(f"Found {total_records} profiles matching criteria")
+                return profiles
+            else:
+                self.logger.error("No data found in search response")
+                return []
+                
+        except Exception as e:
+            self.logger.error(f"Error searching profiles: {e}")
+            return []
 
 
 if __name__ == "__main__":
@@ -222,5 +266,9 @@ if __name__ == "__main__":
     success = scraper.login("prateekvishnu04@gmail.com", "bHZV2btjn6FK@2")
     if success:
         print("Login test successful!")
+        
+        # Test search
+        profiles = scraper.search_profiles()
+        print(f"Found {len(profiles)} profiles")
     else:
         print("Login test failed!") 
