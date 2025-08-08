@@ -38,4 +38,26 @@ Thumbs.db
 # Project specific
 nriva_profiles/
 *.log
-search_page.html 
+search_page.html
+nriva_scraper.log
+nriva_explorer.log
+
+# Scraped data and temporary files
+*.html
+*.tmp
+*.temp
+
+# Credentials and sensitive data
+.env
+config.ini
+secrets.json
+
+# Large files
+*.zip
+*.tar.gz
+*.7z
+
+# Backup files
+*.bak
+*.backup
+*~ 

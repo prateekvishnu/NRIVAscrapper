@@ -1,0 +1,121 @@
+# NRIVA Scraper Project - Cursor Rules
+
+## Project Overview
+This is a Python web scraper for extracting profile data from nriva.org. The scraper handles login with captcha solving, searches for profiles, and extracts detailed information including text, images, and PDF horoscopes.
+
+## Development Rules
+
+### 1. Git Version Control
+- **ALWAYS** commit successful changes to Git immediately after testing
+- Use descriptive commit messages that explain what was changed
+- Commit after each working feature or fix
+- Never commit broken or untested code
+
+### 2. Testing Before Commits
+- **ALWAYS** test code changes before committing
+- Run the scraper to verify functionality works
+- Check for errors and fix them before committing
+- If a test fails, fix the issue before proceeding
+
+### 3. Code Quality
+- Follow PEP 8 Python style guidelines
+- Add proper docstrings to all functions and classes
+- Use meaningful variable and function names
+- Add error handling for all external operations
+- Include logging for debugging and monitoring
+
+### 4. File Organization
+- Keep the main scraper in `nriva_scraper.py`
+- Use `requirements.txt` for dependencies
+- Store configuration in `config.py` if needed
+- Keep documentation in `README.md`
+- Use `.gitignore` to exclude unnecessary files
+
+### 5. Error Handling
+- Always handle exceptions gracefully
+- Log errors with sufficient detail for debugging
+- Provide fallback mechanisms where possible
+- Don't let one profile failure stop the entire scraping process
+
+### 6. Rate Limiting
+- Be respectful to the target website
+- Add delays between requests (2+ seconds)
+- Don't overwhelm the server with too many concurrent requests
+- Monitor for rate limiting responses
+
+### 7. Data Storage
+- Save data in organized folder structure
+- Use JSON for structured data
+- Save raw HTML/text for debugging
+- Download images and PDFs with proper error handling
+
+### 8. Security
+- Never commit credentials to Git
+- Use environment variables for sensitive data
+- Validate all user inputs
+- Sanitize file names and paths
+
+### 9. Documentation
+- Update `MEMORY_BANK.md` with lessons learned
+- Document any website structure changes
+- Keep track of working solutions and known issues
+- Document any API changes or new endpoints
+
+### 10. Git Workflow
+```bash
+# After making changes:
+1. Test the changes work
+2. git add <changed_files>
+3. git commit -m "Descriptive message about changes"
+4. If working on a feature branch, merge to main
+```
+
+## Project Structure
+```
+NRIVAScapper/
+├── nriva_scraper.py      # Main scraper
+├── requirements.txt      # Dependencies
+├── .gitignore           # Git ignore rules
+├── .cursorrules         # This file
+├── README.md            # Project documentation
+├── MEMORY_BANK.md       # Project knowledge base
+├── nriva_profiles/      # Scraped data output
+└── logs/                # Log files
+```
+
+## Key URLs and Endpoints
+- Base URL: https://www.nriva.org
+- Login: /login
+- Search: /eedu-jodu/search-profiles
+- Search API: /eedu-jodu/search-eedujodu-profiles
+- Profile: /eedu-jodu/preview-profile/{id}
+
+## Known Working Solutions
+- Login with CSRF token and math captcha solving
+- Search with form-encoded data (not JSON)
+- Profile extraction from preview-profile endpoints
+- Image and PDF downloading with proper error handling
+
+## Common Issues and Solutions
+- 419 errors: Need CSRF token from the page
+- Captcha solving: Use regex to parse math problems
+- Profile access: Use preview-profile URL format
+- Rate limiting: Add delays between requests
+
+## Testing Checklist
+Before committing any changes:
+- [ ] Code runs without syntax errors
+- [ ] Login functionality works
+- [ ] Search returns expected results
+- [ ] Profile extraction works
+- [ ] File downloads work
+- [ ] Error handling works
+- [ ] Logging provides useful information
+
+## Git Commit Message Format
+Use descriptive commit messages:
+- "Add login functionality with captcha solving"
+- "Fix search API to use form data instead of JSON"
+- "Add profile extraction and file downloading"
+- "Fix CSRF token handling for search requests"
+- "Add error handling for failed profile downloads" 
