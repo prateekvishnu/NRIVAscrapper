@@ -13,6 +13,10 @@ from pathlib import Path
 from urllib.parse import urljoin, urlparse
 from bs4 import BeautifulSoup
 import pandas as pd
+import argparse
+import shutil
+import os
+from dotenv import load_dotenv
 
 
 class NRIVAScraper:
@@ -20,6 +24,9 @@ class NRIVAScraper:
     
     def __init__(self):
         """Initialize the scraper with session and configuration"""
+        # Load environment variables from .env if present
+        load_dotenv()
+
         self.session = requests.Session()
         self.base_url = "https://www.nriva.org"
         self.search_url = f"{self.base_url}/eedu-jodu/search-profiles"
@@ -37,9 +44,11 @@ class NRIVAScraper:
         )
         self.logger = logging.getLogger(__name__)
         
-        # Setup output directory
-        self.output_dir = Path("nriva_profiles")
-        self.output_dir.mkdir(exist_ok=True)
+        # Base output directory (final subfolder depends on selected preferences)
+        self.output_dir_base = Path("nriva_profiles")
+        self.output_dir_base.mkdir(exist_ok=True)
+        # Will be set per run based on preferences
+        self.output_dir = self.output_dir_base
         
         # Set headers
         self.session.headers.update({
@@ -291,8 +300,15 @@ class NRIVAScraper:
             if name_elem:
                 profile_data['name'] = name_elem.get_text(strip=True)
             
-            # Extract all text content
-            profile_data['full_text'] = soup.get_text(separator='\n', strip=True)
+            # Extract all text content (used for backup parsing and saving)
+            full_text = soup.get_text(separator='\n', strip=True)
+            profile_data['full_text'] = full_text
+
+            # Try to extract the public/display Profile Id shown on the page
+            # Common pattern: "Profile Id : 3513"
+            display_id_match = re.search(r'Profile\s*Id\s*:\s*(\d+)', full_text, re.IGNORECASE)
+            if display_id_match:
+                profile_data['display_profile_id'] = display_id_match.group(1)
             
             # Extract all images
             images = []
@@ -326,12 +342,10 @@ class NRIVAScraper:
             self.logger.error(f"Error extracting profile details for ID {profile_id}: {e}")
             return None
     
-    def save_profile_data(self, profile_data, profile_id):
-        """Save profile data to files"""
+    def save_profile_data(self, profile_data, profile_dir: Path):
+        """Save profile data to files in the given profile_dir"""
         try:
-            # Create profile directory
-            profile_dir = self.output_dir / str(profile_id)
-            profile_dir.mkdir(exist_ok=True)
+            profile_dir.mkdir(parents=True, exist_ok=True)
             
             # Save profile data as JSON
             json_file = profile_dir / "profile_data.json"
@@ -389,34 +403,71 @@ class NRIVAScraper:
                     except Exception as e:
                         self.logger.error(f"Error downloading PDF {pdf_url}: {e}")
             
-            self.logger.info(f"Profile {profile_id} data saved to {profile_dir}")
+            self.logger.info(f"Profile data saved to {profile_dir}")
             return True
             
         except Exception as e:
-            self.logger.error(f"Error saving profile data for ID {profile_id}: {e}")
+            self.logger.error(f"Error saving profile data for dir {profile_dir}: {e}")
             return False
+
+    def _preferences_slug(self, gender: str, citizenship: str, max_age: int) -> str:
+        gender_slug = (gender or 'Any').replace(' ', '')
+        citizen_slug = (citizenship or 'Any').replace(' ', '')
+        return f"{gender_slug}_{citizen_slug}_maxAge{max_age}"
     
-    def scrape_all_profiles(self, username="prateekvishnu04@gmail.com", password="bHZV2btjn6FK@2"):
-        """Main method to scrape all profiles"""
+    def scrape_all_profiles(
+        self,
+        username: str | None = None,
+        password: str | None = None,
+        gender="Female",
+        max_age=31,
+        citizenship="USA",
+        on_exists: str = "skip",  # "skip" or "overwrite"
+        max_profiles: int | None = None,
+    ):
+        """Main method to scrape all profiles.
+
+        on_exists:
+          - "skip": if a profile folder already exists, skip processing
+          - "overwrite": delete existing folder and re-scrape (restart)
+        max_profiles: Process only first N profiles (useful for testing)
+        """
         try:
             self.logger.info("Starting NRIVA profile scraping...")
             
-            # Login first
+            # Resolve credentials from args or environment
+            if not username:
+                username = os.environ.get("NRIVA_USERNAME")
+            if not password:
+                password = os.environ.get("NRIVA_PASSWORD")
+
+            if not username or not password:
+                self.logger.error("Missing credentials. Provide --username/--password or set NRIVA_USERNAME/NRIVA_PASSWORD in environment.")
+                return False
+
+            # Login first (do not log secrets)
             if not self.login(username, password):
                 self.logger.error("Login failed, cannot proceed")
                 return False
             
-            # Search for profiles
-            profiles = self.search_profiles()
+            # Search for profiles with selected preferences
+            profiles = self.search_profiles(gender=gender, max_age=max_age, citizenship=citizenship)
             if not profiles:
                 self.logger.error("No profiles found")
                 return False
             
             self.logger.info(f"Found {len(profiles)} profiles to process")
+
+            # Prepare preferences output folder
+            slug = self._preferences_slug(gender, citizenship, max_age)
+            self.output_dir = self.output_dir_base / slug
+            self.output_dir.mkdir(parents=True, exist_ok=True)
             
             # Process each profile
             successful_profiles = 0
             for i, profile in enumerate(profiles, 1):
+                if max_profiles is not None and successful_profiles >= max_profiles:
+                    break
                 try:
                     profile_id = profile.get('id') or profile.get('profile_id')
                     if not profile_id:
@@ -437,8 +488,21 @@ class NRIVAScraper:
                         self.logger.warning(f"Could not extract data for profile ID {profile_id}")
                         continue
                     
+                    # Determine final folder name using display Profile Id if available
+                    final_folder_name = profile_data.get('display_profile_id') or str(profile_id)
+                    profile_dir = self.output_dir / final_folder_name
+
+                    # Handle existing folder based on on_exists behavior
+                    if profile_dir.exists():
+                        if on_exists == "skip":
+                            self.logger.info(f"Folder {profile_dir} exists, skipping (on_exists=skip)")
+                            continue
+                        elif on_exists == "overwrite":
+                            self.logger.info(f"Folder {profile_dir} exists, overwriting (on_exists=overwrite)")
+                            shutil.rmtree(profile_dir, ignore_errors=True)
+
                     # Save profile data
-                    if self.save_profile_data(profile_data, profile_id):
+                    if self.save_profile_data(profile_data, profile_dir):
                         successful_profiles += 1
                     
                     # Be respectful to the server
@@ -457,12 +521,27 @@ class NRIVAScraper:
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="NRIVA Eedu-Jodu profile scraper")
+    parser.add_argument("--username", default=os.environ.get("NRIVA_USERNAME"), help="Login email (or set NRIVA_USERNAME in env)")
+    parser.add_argument("--password", default=os.environ.get("NRIVA_PASSWORD"), help="Login password (or set NRIVA_PASSWORD in env)")
+    parser.add_argument("--gender", default="Female", help="Gender filter (Female/Male/Any)")
+    parser.add_argument("--max-age", type=int, default=31, help="Maximum age")
+    parser.add_argument("--citizenship", default="USA", help="Citizenship filter (e.g., USA)")
+    parser.add_argument("--on-exists", choices=["skip", "overwrite"], default="skip", help="Behavior if profile folder exists")
+    parser.add_argument("--max-profiles", type=int, default=None, help="Limit number of profiles to process")
+
+    args = parser.parse_args()
+
     scraper = NRIVAScraper()
     print("NRIVA Scraper created successfully!")
-    
-    # Test the complete scraping process
-    success = scraper.scrape_all_profiles()
-    if success:
-        print("Scraping completed successfully!")
-    else:
-        print("Scraping failed!") 
+
+    ok = scraper.scrape_all_profiles(
+        username=args.username,
+        password=args.password,
+        gender=args.gender,
+        max_age=args.max_age,
+        citizenship=args.citizenship,
+        on_exists=args.on_exists,
+        max_profiles=args.max_profiles,
+    )
+    print("Scraping completed successfully!" if ok else "Scraping failed!")

@@ -51,6 +51,8 @@ nriva_explorer.log
 .env
 config.ini
 secrets.json
+.env.local
+.env.*.local
 
 # Large files
 *.zip

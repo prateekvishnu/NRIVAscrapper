@@ -238,3 +238,26 @@ This scraper is provided for educational and research purposes. Users are respon
 - Not overwhelming the target server with requests
 
 The authors are not responsible for any misuse of this tool or any legal consequences arising from its use. 
+
+## Credentials (Environment Variables)
+
+Store your login securely using a local `.env` file (which is ignored by Git):
+
+```
+NRIVA_USERNAME=your_email@example.com
+NRIVA_PASSWORD=your_password
+```
+
+Then run without passing credentials explicitly:
+
+```
+python nriva_scraper.py --gender Female --max-age 31 --citizenship USA
+```
+
+You can still override via CLI:
+
+```
+python nriva_scraper.py --username my@mail.com --password 'secret'
+```
+
+The `.env` file is included in `.gitignore` so credentials are not committed. 
